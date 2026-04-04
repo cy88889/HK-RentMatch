@@ -1,0 +1,34 @@
+# Cursor / IDE
+.specstory/
+
+# 用户上传（帖子图片等，勿入库）
+/uploads/
+
+# 本地数据库配置（仓库内请用 config.example.php 等模板）
+/includes/config.php
+
+# 环境变量
+.env
+.env.local
+.env.*.local
+
+# Composer（若日后使用）
+/vendor/
+
+# 操作系统
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# 编辑器 / 工具
+*.swp
+*.swo
+*~
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# 日志与临时文件
+*.log
+*.cache
+*.tmp

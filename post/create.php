@@ -1,0 +1,971 @@
+<?php
+require_once __DIR__ . '/../includes/auth.php';
+require_login();
+
+$user              = current_user();
+$errors            = [];
+$maxImageCount     = 3;
+$maxImageSizeBytes = 5 * 1024 * 1024;
+$validTypes        = ['rent', 'roommate-source', 'roommate-nosource', 'sublet'];
+
+$form = [
+    'type'               => 'rent',
+    'roommate_mode'      => '',
+    'title'              => '',
+    'price'              => '',
+    'floor'              => '',
+    'rent_period'        => '',
+    'remaining_months'   => '',
+    'move_in_date'       => '',
+    'renewable'          => '',
+    'gender_requirement' => '',
+    'need_count'         => '',
+    'region'             => '',
+    'school_scope'       => '',
+    'metro_stations'     => '',
+    'content'            => '',
+];
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    foreach ($form as $key => $_) {
+        $form[$key] = trim($_POST[$key] ?? '');
+    }
+
+    $rawType = $form['type'];
+    if ($rawType === 'roommate-source' || $rawType === 'roommate-nosource') {
+        $postType = $rawType;
+        $form['type'] = 'roommate';
+        $form['roommate_mode'] = ($rawType === 'roommate-source') ? 'source' : 'nosource';
+    } elseif ($rawType === 'roommate') {
+        if ($form['roommate_mode'] === 'source') {
+            $postType = 'roommate-source';
+        } elseif ($form['roommate_mode'] === 'nosource') {
+            $postType = 'roommate-nosource';
+        } else {
+            $postType = 'rent';
+            $errors['type'] = '请选择室友类型（有房源 / 无房源）。';
+        }
+    } else {
+        $postType = in_array($rawType, $validTypes, true) ? $rawType : 'rent';
+        if (in_array($postType, ['rent', 'sublet'], true)) {
+            $form['type'] = $postType;
+            $form['roommate_mode'] = '';
+        }
+    }
+
+    // 转租仅允许学生发布
+    if ($postType === 'sublet' && (($user['role'] ?? '') !== 'student')) {
+        $errors['type'] = '仅港硕学生可发布转租信息。';
+    }
+
+    // 标题
+    if ($form['title'] === '' || mb_strlen($form['title'], 'UTF-8') < 5 || mb_strlen($form['title'], 'UTF-8') > 50) {
+        $errors['title'] = '请输入5-50字的标题。';
+    }
+
+    // 价格
+    $maxPrice = ($postType === 'roommate-nosource') ? 50000 : 100000;
+    if ($form['price'] === '' || !is_numeric($form['price'])
+        || (float)$form['price'] < 1000 || (float)$form['price'] > $maxPrice) {
+        $errors['price'] = '请输入1000-' . $maxPrice . '之间的数字。';
+    }
+
+    // 楼层（租房和有房找室友必填）
+    if (in_array($postType, ['rent', 'roommate-source'], true) && $form['floor'] === '') {
+        $errors['floor'] = '请填写楼层信息。';
+    }
+
+    // 租期（转租不要求用户填写）
+    if ($postType !== 'sublet' && !in_array($form['rent_period'], ['short', 'medium', 'long'], true)) {
+        $errors['rent_period'] = '请选择租期。';
+    }
+
+    // 性别要求（找室友与转租必填）
+    if (in_array($postType, ['roommate-source', 'roommate-nosource', 'sublet'], true)
+        && !in_array($form['gender_requirement'], ['male', 'female', 'any'], true)) {
+        $errors['gender_requirement'] = '请选择性别要求。';
+    }
+
+    // 转租专属字段
+    if ($postType === 'sublet') {
+        $remainingMonths = (int)$form['remaining_months'];
+        if ($remainingMonths < 1 || $remainingMonths > 36) {
+            $errors['remaining_months'] = '租期剩余需在 1-36 个月之间。';
+        }
+
+        if ($form['move_in_date'] === '') {
+            $errors['move_in_date'] = '请选择最早入住日期。';
+        } else {
+            $moveInTs = strtotime($form['move_in_date']);
+            $todayTs  = strtotime(date('Y-m-d'));
+            if ($moveInTs === false || $moveInTs < $todayTs) {
+                $errors['move_in_date'] = '最早入住日期不能早于今天。';
+            }
+        }
+
+        if ($form['renewable'] !== '' && !in_array($form['renewable'], ['yes', 'no'], true)) {
+            $errors['renewable'] = '可续租字段值无效。';
+        }
+    }
+
+    // 需求人数（有房找室友必填）
+    if ($postType === 'roommate-source') {
+        $nc = (int)$form['need_count'];
+        if ($nc < 1 || $nc > 10) {
+            $errors['need_count'] = '请输入1-10的需求人数。';
+        }
+    }
+
+    // 区域
+    if ($form['region'] === '') {
+        $errors['region'] = '请选择所属区域。';
+    }
+
+    // 学校
+    if ($form['school_scope'] === '') {
+        $errors['school_scope'] = '请选择学校范围。';
+    }
+
+    // 地铁站
+    if ($form['metro_stations'] === '') {
+        $errors['metro_stations'] = '请选择至少一个地铁站。';
+    }
+
+    // 图片处理（租房 / 转租 / 有房找室友支持图片）
+    $uploadedImages = [];
+    if (in_array($postType, ['rent', 'sublet', 'roommate-source'], true)
+        && isset($_FILES['images']) && is_array($_FILES['images']['name'] ?? null)) {
+        $names     = $_FILES['images']['name'];
+        $types     = $_FILES['images']['type'];
+        $tmpNames  = $_FILES['images']['tmp_name'];
+        $errorsArr = $_FILES['images']['error'];
+        $sizes     = $_FILES['images']['size'];
+
+        foreach ($names as $idx => $name) {
+            $fileError = $errorsArr[$idx] ?? UPLOAD_ERR_NO_FILE;
+            if ($fileError === UPLOAD_ERR_NO_FILE) continue;
+            if ($fileError !== UPLOAD_ERR_OK) { $errors['images'] = '图片上传失败，请重试。'; break; }
+            $uploadedImages[] = [
+                'name'     => (string)($name ?? ''),
+                'type'     => (string)($types[$idx] ?? ''),
+                'tmp_name' => (string)($tmpNames[$idx] ?? ''),
+                'size'     => (int)($sizes[$idx] ?? 0),
+            ];
+        }
+    }
+
+    if (count($uploadedImages) > $maxImageCount) {
+        $errors['images'] = '最多上传 ' . $maxImageCount . ' 张图片。';
+    }
+
+    $allowedMimeToExt = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp', 'image/gif' => 'gif'];
+
+    if (empty($errors) && !empty($uploadedImages)) {
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        if ($finfo === false) {
+            $errors['images'] = '无法检测图片类型，请稍后再试。';
+        } else {
+            foreach ($uploadedImages as $file) {
+                if ($file['size'] <= 0 || $file['size'] > $maxImageSizeBytes) {
+                    $errors['images'] = '单张图片大小需在 5MB 以内。'; break;
+                }
+                $mime = finfo_file($finfo, $file['tmp_name']) ?: '';
+                if (!isset($allowedMimeToExt[$mime])) {
+                    $errors['images'] = '仅支持 JPG / PNG / WEBP / GIF 图片。'; break;
+                }
+            }
+            finfo_close($finfo);
+        }
+    }
+
+    // 保存图片
+    $savedImagePaths = [];
+    if (empty($errors) && !empty($uploadedImages)) {
+        $uploadDir = dirname(__DIR__) . '/uploads/posts';
+        if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
+            $errors['images'] = '创建上传目录失败，请检查权限。';
+        } else {
+            $finfo = finfo_open(FILEINFO_MIME_TYPE);
+            if ($finfo !== false) {
+                foreach ($uploadedImages as $file) {
+                    $mime = finfo_file($finfo, $file['tmp_name']) ?: '';
+                    $ext  = $allowedMimeToExt[$mime] ?? '';
+                    if ($ext === '') { $errors['images'] = '图片类型不受支持。'; break; }
+                    try { $random = bin2hex(random_bytes(8)); } catch (Exception $e) { $random = uniqid('', true); }
+                    $filename   = date('YmdHis') . '_' . $random . '.' . $ext;
+                    $targetPath = $uploadDir . '/' . $filename;
+                    if (!move_uploaded_file($file['tmp_name'], $targetPath)) {
+                        $errors['images'] = '保存图片失败，请重试。'; break;
+                    }
+                    $savedImagePaths[] = 'uploads/posts/' . $filename;
+                }
+                finfo_close($finfo);
+            }
+        }
+        if (!empty($errors)) {
+            foreach ($savedImagePaths as $p) { $abs = dirname(__DIR__) . '/' . $p; if (is_file($abs)) @unlink($abs); }
+            $savedImagePaths = [];
+        }
+    }
+
+    // 兼容 posts.rent_period NOT NULL：转租按 remaining_months 自动映射
+    $rentPeriodForDb = $form['rent_period'];
+    if ($postType === 'sublet') {
+        $remainingMonthsForPeriod = (int)$form['remaining_months'];
+        if ($remainingMonthsForPeriod <= 6) {
+            $rentPeriodForDb = 'short';
+        } elseif ($remainingMonthsForPeriod <= 12) {
+            $rentPeriodForDb = 'medium';
+        } else {
+            $rentPeriodForDb = 'long';
+        }
+    }
+
+    // 写库
+    if (empty($errors)) {
+        $stmt = $pdo->prepare(
+            'INSERT INTO posts (
+                user_id, type, title, content, price, floor,
+                rent_period, region, school_scope, metro_stations,
+                gender_requirement, need_count, remaining_months, move_in_date,
+                renewable, images, status
+             ) VALUES (
+                :user_id, :type, :title, :content, :price, :floor,
+                :rent_period, :region, :school_scope, :metro_stations,
+                :gender_requirement, :need_count, :remaining_months, :move_in_date,
+                :renewable, :images, :status
+             )'
+        );
+        $stmt->execute([
+            ':user_id'            => $user['id'],
+            ':type'               => $postType,
+            ':title'              => $form['title'],
+            ':content'            => $form['content'],
+            ':price'              => (float)$form['price'],
+            ':floor'              => ($form['floor'] !== '') ? $form['floor'] : null,
+            ':rent_period'        => $rentPeriodForDb,
+            ':region'             => $form['region'],
+            ':school_scope'       => ($form['school_scope'] !== '') ? $form['school_scope'] : null,
+            ':metro_stations'     => ($form['metro_stations'] !== '') ? $form['metro_stations'] : null,
+            ':gender_requirement' => ($form['gender_requirement'] !== '') ? $form['gender_requirement'] : null,
+            ':need_count'         => ($form['need_count'] !== '') ? (int)$form['need_count'] : null,
+            ':remaining_months'   => ($postType === 'sublet' && $form['remaining_months'] !== '') ? (int)$form['remaining_months'] : null,
+            ':move_in_date'       => ($postType === 'sublet' && $form['move_in_date'] !== '') ? $form['move_in_date'] : null,
+            ':renewable'          => ($postType === 'sublet' && $form['renewable'] !== '') ? $form['renewable'] : null,
+            ':images'             => !empty($savedImagePaths) ? json_encode($savedImagePaths, JSON_UNESCAPED_UNICODE) : null,
+            ':status'             => 'active',
+        ]);
+        $redirectTab = 'rent';
+        if ($postType === 'sublet') {
+            $redirectTab = 'sublet';
+        } elseif (in_array($postType, ['roommate-source', 'roommate-nosource'], true)) {
+            $redirectTab = 'roommate';
+        }
+        header('Location: ../index.php?tab=' . urlencode($redirectTab) . '&toast=published');
+        exit;
+    }
+}
+
+include __DIR__ . '/../includes/header.php';
+?>
+
+<!-- Steps Indicator -->
+<div class="steps">
+    <div class="step active" id="cStep1">
+        <div class="step-circle">1</div>
+        <span class="step-label">选择类型</span>
+    </div>
+    <div class="step-line" id="cLine1"></div>
+    <div class="step" id="cStep2">
+        <div class="step-circle">2</div>
+        <span class="step-label">填写信息</span>
+    </div>
+    <div class="step-line" id="cLine2"></div>
+    <div class="step" id="cStep3">
+        <div class="step-circle">3</div>
+        <span class="step-label">预览发布</span>
+    </div>
+</div>
+
+<!-- Main Form -->
+<div class="create-form-container">
+
+    <?php if (!empty($errors)): ?>
+    <div class="form-error form-error-general" style="background:#fff0f0;border:1px solid var(--danger);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:20px;color:var(--danger);">
+        提交失败，请检查以下错误：
+        <ul style="margin:6px 0 0 16px;">
+        <?php foreach ($errors as $e): ?>
+            <li><?php echo htmlspecialchars($e); ?></li>
+        <?php endforeach; ?>
+        </ul>
+    </div>
+    <?php endif; ?>
+
+    <!-- Step 1: Type Selection -->
+    <div id="cSection1" class="create-type-section">
+        <h2 class="create-type-section-title">选择发布类型</h2>
+        <p class="create-type-section-desc">不同类型对应不同的信息表单，请根据实际需求选择</p>
+        <div class="create-type-cards">
+            <div class="create-type-card" data-type="rent" onclick="cSelectType('rent')">
+                <div class="create-type-check">✓</div>
+                <div class="create-type-icon">🏠</div>
+                <div class="create-type-name">发布租房</div>
+                <div class="create-type-desc">房源供给方发布<br>出租房源信息</div>
+                <span class="create-type-role">🏢 房源供给方</span>
+            </div>
+            <div class="create-type-card" data-type="roommate" onclick="cSelectType('roommate')">
+                <div class="create-type-check">✓</div>
+                <div class="create-type-icon">🏘️</div>
+                <div class="create-type-name">找室友</div>
+                <div class="create-type-desc">支持有房源/无房源<br>两种发布方式</div>
+                <span class="create-type-role">🎓 港硕学生</span>
+            </div>
+            <div class="create-type-card" data-type="sublet" onclick="cSelectType('sublet')">
+                <div class="create-type-check">✓</div>
+                <div class="create-type-icon">🔁</div>
+                <div class="create-type-name">发布转租</div>
+                <div class="create-type-desc">面向在租房源<br>发布转租信息</div>
+                <span class="create-type-role">🎓 港硕学生</span>
+            </div>
+        </div>
+        <div id="cRoommateModeWrap" class="create-subtype-wrap" style="display:none;">
+            <div class="create-subtype-title">请选择室友发布方式 <span class="required">*</span></div>
+            <div class="create-subtype-options">
+                <button type="button" class="create-subtype-option" data-mode="source" onclick="cSelectRoommateMode('source')">
+                    🏘️ 有房源
+                </button>
+                <button type="button" class="create-subtype-option" data-mode="nosource" onclick="cSelectRoommateMode('nosource')">
+                    🔍 无房源
+                </button>
+            </div>
+        </div>
+        <div class="create-step-nav">
+            <div></div>
+            <button class="btn btn-primary btn-to-step2" id="cToStep2Btn" onclick="cGoToStep(2)">
+                下一步：填写信息 →
+            </button>
+        </div>
+    </div>
+
+    <!-- Step 2: Form -->
+    <div id="cSection2" class="create-form-section" style="display:none;">
+        <div id="cFormBadge" class="create-section-badge rent">🏠 发布租房</div>
+        <h2 class="create-section-title" id="cFormTitle">填写房源信息</h2>
+        <p class="create-section-desc" id="cFormDesc">请填写以下信息，带 * 为必填项</p>
+
+        <form id="cForm" method="post" enctype="multipart/form-data" novalidate>
+            <input type="hidden" name="type" id="cInputType" value="rent">
+            <input type="hidden" name="roommate_mode" id="cInputRoommateMode" value="">
+
+            <!-- 标题 -->
+            <div class="form-group">
+                <label class="form-label">标题 <span class="required">*</span></label>
+                <input type="text" class="form-input" name="title" id="cTitle"
+                       placeholder="简明扼要描述亮点，5-50字" maxlength="50"
+                       oninput="cCharCount(this,50,'cTitleCount')"
+                       value="<?php echo htmlspecialchars($form['title']); ?>">
+                <div class="char-count" id="cTitleCount">0/50</div>
+            </div>
+
+            <hr class="create-form-divider">
+
+            <div class="create-form-row">
+                <!-- 价格 -->
+                <div class="form-group" id="cGroupPrice">
+                    <label class="form-label" id="cLabelPrice">月租金（HKD） <span class="required">*</span></label>
+                    <div style="position:relative;">
+                        <input type="number" class="form-input" name="price" id="cPrice"
+                               placeholder="1000 ~ 100000" min="1000" max="100000"
+                               style="padding-right:56px;"
+                               value="<?php echo htmlspecialchars($form['price']); ?>">
+                        <span style="position:absolute;right:14px;top:50%;transform:translateY(-50%);color:var(--text-hint);font-size:13px;">HKD/月</span>
+                    </div>
+                </div>
+
+                <!-- 需求人数（有房找室友） -->
+                <div class="form-group" id="cGroupNeedCount" style="display:none;">
+                    <label class="form-label">需求室友人数 <span class="required">*</span></label>
+                    <input type="number" class="form-input" name="need_count" id="cNeedCount"
+                           placeholder="1 ~ 10" min="1" max="10"
+                           value="<?php echo htmlspecialchars($form['need_count']); ?>">
+                </div>
+
+                <!-- 楼层（租房 / 有房找室友） -->
+                <div class="form-group" id="cGroupFloor">
+                    <label class="form-label">楼层 <span class="required">*</span></label>
+                    <input type="text" class="form-input" name="floor" id="cFloor"
+                           placeholder="如 15/F、高层"
+                           value="<?php echo htmlspecialchars($form['floor']); ?>">
+                </div>
+            </div>
+
+            <!-- 租期（转租不展示） -->
+            <div class="form-group" id="cGroupRentPeriod">
+                <label class="form-label">租期 <span class="required">*</span></label>
+                <div class="radio-group" id="cPeriodGroup">
+                    <label class="radio-pill <?php echo $form['rent_period']==='short'?'checked':''; ?>" onclick="cCheckRadio(this,'cPeriodGroup')">
+                        <input type="radio" name="rent_period" value="short" <?php echo $form['rent_period']==='short'?'checked':''; ?>> 6个月以下
+                    </label>
+                    <label class="radio-pill <?php echo $form['rent_period']==='medium'?'checked':''; ?>" onclick="cCheckRadio(this,'cPeriodGroup')">
+                        <input type="radio" name="rent_period" value="medium" <?php echo $form['rent_period']==='medium'?'checked':''; ?>> 6个月至1年
+                    </label>
+                    <label class="radio-pill <?php echo $form['rent_period']==='long'?'checked':''; ?>" onclick="cCheckRadio(this,'cPeriodGroup')">
+                        <input type="radio" name="rent_period" value="long" <?php echo $form['rent_period']==='long'?'checked':''; ?>> 1年及以上
+                    </label>
+                </div>
+            </div>
+
+            <!-- 性别要求（找室友类型） -->
+            <div class="form-group" id="cGroupGender" style="display:none;">
+                <label class="form-label">性别要求 <span class="required">*</span></label>
+                <div class="radio-group" id="cGenderGroup">
+                    <label class="radio-pill <?php echo $form['gender_requirement']==='male'?'checked':''; ?>" onclick="cCheckRadio(this,'cGenderGroup')">
+                        <input type="radio" name="gender_requirement" value="male" <?php echo $form['gender_requirement']==='male'?'checked':''; ?>> 👨 男生
+                    </label>
+                    <label class="radio-pill <?php echo $form['gender_requirement']==='female'?'checked':''; ?>" onclick="cCheckRadio(this,'cGenderGroup')">
+                        <input type="radio" name="gender_requirement" value="female" <?php echo $form['gender_requirement']==='female'?'checked':''; ?>> 👩 女生
+                    </label>
+                    <label class="radio-pill <?php echo $form['gender_requirement']==='any'?'checked':''; ?>" onclick="cCheckRadio(this,'cGenderGroup')">
+                        <input type="radio" name="gender_requirement" value="any" <?php echo $form['gender_requirement']==='any'?'checked':''; ?>> 🤝 不限
+                    </label>
+                </div>
+            </div>
+
+            <!-- 转租专属字段 -->
+            <div id="cGroupSubletExtras" style="display:none;">
+                <div class="create-form-row">
+                    <div class="form-group">
+                        <label class="form-label">租期剩余（月） <span class="required">*</span></label>
+                        <input type="number" class="form-input" name="remaining_months" id="cRemainingMonths"
+                               placeholder="1 ~ 36" min="1" max="36"
+                               value="<?php echo htmlspecialchars($form['remaining_months']); ?>">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">最早入住日期 <span class="required">*</span></label>
+                        <input type="date" class="form-input" name="move_in_date" id="cMoveInDate"
+                               min="<?php echo date('Y-m-d'); ?>"
+                               value="<?php echo htmlspecialchars($form['move_in_date']); ?>">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">是否可续租 <span style="font-weight:400;color:var(--text-hint);font-size:12px;">（选填）</span></label>
+                    <div class="radio-group" id="cRenewableGroup">
+                        <label class="radio-pill <?php echo $form['renewable']==='yes'?'checked':''; ?>" onclick="cCheckRadio(this,'cRenewableGroup')">
+                            <input type="radio" name="renewable" value="yes" <?php echo $form['renewable']==='yes'?'checked':''; ?>> ✅ 可续租
+                        </label>
+                        <label class="radio-pill <?php echo $form['renewable']==='no'?'checked':''; ?>" onclick="cCheckRadio(this,'cRenewableGroup')">
+                            <input type="radio" name="renewable" value="no" <?php echo $form['renewable']==='no'?'checked':''; ?>> ❌ 不可续租
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <hr class="create-form-divider">
+
+            <div class="create-form-row">
+                <!-- 区域 -->
+                <div class="form-group">
+                    <label class="form-label">所属区域 <span class="required">*</span></label>
+                    <select class="form-select" name="region" id="cRegion">
+                        <option value="">请选择区域</option>
+                        <?php
+                        $regions = ['中西区','东区','南区','湾仔区','九龙城区','观塘区','深水埗区','黄大仙区',
+                                    '油尖旺区','离岛区','葵青区','北区','西贡区','沙田区','大埔区','荃湾区','屯门区','元朗区'];
+                        foreach ($regions as $r): ?>
+                            <option value="<?php echo htmlspecialchars($r); ?>" <?php echo $form['region']===$r?'selected':''; ?>>
+                                <?php echo htmlspecialchars($r); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+
+                <!-- 学校范围 -->
+                <div class="form-group">
+                    <label class="form-label">学校范围 <span class="required">*</span></label>
+                    <select class="form-select" name="school_scope" id="cSchool">
+                        <option value="">请选择学校</option>
+                        <?php
+                        $schools = ['香港大学','香港中文大学','香港科技大学','香港城市大学',
+                                    '香港理工大学','香港浸会大学','岭南大学','香港教育大学'];
+                        foreach ($schools as $s): ?>
+                            <option value="<?php echo htmlspecialchars($s); ?>" <?php echo $form['school_scope']===$s?'selected':''; ?>>
+                                <?php echo htmlspecialchars($s); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+            </div>
+
+            <!-- 地铁站多选 -->
+            <div class="form-group">
+                <label class="form-label">附近地铁站 <span class="required">*</span> <span style="font-weight:400;color:var(--text-hint);font-size:12px;">（可多选）</span></label>
+                <input type="hidden" name="metro_stations" id="cMetroInput" value="<?php echo htmlspecialchars($form['metro_stations']); ?>">
+                <div class="metro-select" id="cMetroSelect">
+                    <div class="metro-trigger" onclick="cToggleMetro()">
+                        <div class="metro-tags-wrap" id="cMetroTags">
+                            <span class="metro-placeholder">点击选择地铁站</span>
+                        </div>
+                        <span style="color:var(--text-hint);font-size:12px;">▼</span>
+                    </div>
+                    <div class="metro-dropdown" id="cMetroDropdown">
+                        <?php
+                        $metros = ['九龙塘','旺角','太子','沙田','大学','大围','香港大学','中环','金钟',
+                                   '铜锣湾','坑口','将军澳','荃湾','葵芳','屯门','元朗'];
+                        foreach ($metros as $m): ?>
+                            <div class="metro-option" onclick="cToggleMetroItem(this)">
+                                <div class="metro-option-check"></div>
+                                🚇 <?php echo htmlspecialchars($m); ?>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+            </div>
+
+            <hr class="create-form-divider">
+
+            <!-- 图片上传（租房 / 有房找室友） -->
+            <div class="form-group" id="cGroupImages">
+                <label class="form-label">上传图片 <span style="font-weight:400;color:var(--text-hint);font-size:12px;">（选填，最多3张）</span></label>
+                <div class="upload-area" id="cUploadArea">
+                    <div class="upload-slot" onclick="document.getElementById('cFileInput').click()">
+                        <span class="upload-slot-icon">📷</span>
+                        <span class="upload-slot-text">添加图片</span>
+                    </div>
+                </div>
+                <input type="file" id="cFileInput" name="images[]" accept="image/jpeg,image/png,image/webp,image/gif" multiple style="display:none;" onchange="cHandleImages(this)">
+                <div class="form-hint" style="margin-top:8px;">支持 JPG/PNG，单张不超过 5MB，最多 3 张</div>
+            </div>
+
+            <!-- 其他信息 -->
+            <div class="form-group">
+                <label class="form-label">其他信息 <span style="font-weight:400;color:var(--text-hint);font-size:12px;">（选填）</span></label>
+                <textarea class="form-input" name="content" id="cContent" rows="4"
+                          placeholder="补充说明，如家电配备、周边环境、合租要求等，100字以内"
+                          maxlength="100"
+                          oninput="cCharCount(this,100,'cContentCount')"
+                          style="resize:vertical;"><?php echo htmlspecialchars($form['content']); ?></textarea>
+                <div class="char-count" id="cContentCount">0/100</div>
+            </div>
+
+            <div class="create-step-nav">
+                <button type="button" class="btn btn-outline" onclick="cGoToStep(1)">← 上一步</button>
+                <button type="button" class="btn btn-primary" onclick="cGoToStep(3)">下一步：预览 →</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Step 3: Preview -->
+    <div id="cSection3" class="create-form-section" style="display:none;">
+        <h2 class="create-section-title">预览并发布</h2>
+        <p class="create-section-desc">确认信息无误后点击发布，发布后将立即对外展示</p>
+
+        <div class="preview-grid" id="cPreviewGrid"></div>
+
+        <div class="create-step-nav" style="margin-top:28px;">
+            <button type="button" class="btn btn-outline" onclick="cGoToStep(2)">← 修改信息</button>
+            <button type="button" class="btn btn-primary" onclick="cSubmit()">✓ 确认发布</button>
+        </div>
+    </div>
+
+</div><!-- /.create-form-container -->
+
+<?php include __DIR__ . '/../includes/footer.php'; ?>
+
+<script>
+/* ==================== State ==================== */
+let cSelectedType  = '';
+let cRoommateMode  = '';
+let cSelectedMetros = [];
+let cUploadedImages = [];   // base64 previews
+let cFileObjects    = [];   // actual File objects, synced back to <input> before submit
+
+const C_TYPE_CONFIG = {
+    'rent': {
+        badge: '🏠 发布租房', badgeClass: 'rent',
+        title: '填写房源信息', desc: '请填写以下房源信息，带 * 为必填项',
+        priceLabel: '月租金（HKD）', maxPrice: 100000,
+        showFloor: true, showRentPeriod: true, showGender: false, showNeedCount: false, showImages: true, showSubletFields: false
+    },
+    'sublet': {
+        badge: '🔁 转租', badgeClass: 'sublet',
+        title: '填写转租信息', desc: '请填写以下转租信息，带 * 为必填项',
+        priceLabel: '转租价格（HKD）', maxPrice: 100000,
+        showFloor: true, showRentPeriod: false, showGender: true, showNeedCount: false, showImages: true, showSubletFields: true
+    },
+    'roommate-source': {
+        badge: '🏘️ 已有房源·找室友', badgeClass: 'roommate-source',
+        title: '填写房源与室友需求', desc: '请填写以下信息，带 * 为必填项',
+        priceLabel: '月租金（HKD）', maxPrice: 100000,
+        showFloor: true, showRentPeriod: true, showGender: true, showNeedCount: true, showImages: true, showSubletFields: false
+    },
+    'roommate-nosource': {
+        badge: '🔍 无房源·找室友', badgeClass: 'roommate-nosource',
+        title: '填写室友需求', desc: '请填写以下信息，带 * 为必填项',
+        priceLabel: '租房预算（HKD）', maxPrice: 50000,
+        showFloor: false, showRentPeriod: true, showGender: true, showNeedCount: false, showImages: false, showSubletFields: false
+    }
+};
+
+/* ==================== Step 1: Type Select ==================== */
+function cSelectType(type) {
+    cSelectedType = type;
+    document.querySelectorAll('.create-type-card').forEach(c => c.classList.remove('selected'));
+    document.querySelector('.create-type-card[data-type="' + type + '"]').classList.add('selected');
+    if (type !== 'roommate') cRoommateMode = '';
+    const modeWrap = document.getElementById('cRoommateModeWrap');
+    if (modeWrap) modeWrap.style.display = type === 'roommate' ? 'block' : 'none';
+    document.querySelectorAll('.create-subtype-option').forEach(el => {
+        el.classList.toggle('selected', el.dataset.mode === cRoommateMode);
+    });
+    cRefreshStep1State();
+}
+
+function cSelectRoommateMode(mode, silent = false) {
+    cRoommateMode = mode;
+    document.querySelectorAll('.create-subtype-option').forEach(el => {
+        el.classList.toggle('selected', el.dataset.mode === mode);
+    });
+    cRefreshStep1State();
+    if (!silent) showToast('已选择：' + (mode === 'source' ? '有房源找室友' : '无房源找室友'), 'success');
+}
+
+function cGetEffectiveType() {
+    if (cSelectedType !== 'roommate') return cSelectedType;
+    if (cRoommateMode === 'source') return 'roommate-source';
+    if (cRoommateMode === 'nosource') return 'roommate-nosource';
+    return '';
+}
+
+function cRefreshStep1State() {
+    const btn = document.getElementById('cToStep2Btn');
+    if (!btn) return;
+    const canNext = cSelectedType && (cSelectedType !== 'roommate' || !!cRoommateMode);
+    btn.style.opacity = canNext ? '1' : '0.45';
+    btn.style.pointerEvents = canNext ? 'auto' : 'none';
+}
+
+/* ==================== Step Navigation ==================== */
+function cGoToStep(step) {
+    if (step === 2) {
+        if (!cSelectedType) { showToast('请先选择发布类型', 'error'); return; }
+        if (cSelectedType === 'roommate' && !cRoommateMode) { showToast('请先选择有房源或无房源', 'error'); return; }
+    }
+    if (step === 3 && !cValidateForm()) return;
+
+    for (let i = 1; i <= 3; i++) {
+        const el = document.getElementById('cStep' + i);
+        el.classList.remove('active', 'done');
+        if (i < step) el.classList.add('done');
+        else if (i === step) el.classList.add('active');
+    }
+    document.getElementById('cLine1').classList.toggle('done', step > 1);
+    document.getElementById('cLine2').classList.toggle('done', step > 2);
+
+    document.getElementById('cSection1').style.display = step === 1 ? 'block' : 'none';
+    document.getElementById('cSection2').style.display = step === 2 ? 'block' : 'none';
+    document.getElementById('cSection3').style.display = step === 3 ? 'block' : 'none';
+
+    if (step === 2) cConfigureForm();
+    if (step === 3) cBuildPreview();
+
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+/* ==================== Configure Form ==================== */
+function cConfigureForm() {
+    const effectiveType = cGetEffectiveType();
+    const cfg = C_TYPE_CONFIG[effectiveType];
+    if (!cfg) return;
+    document.getElementById('cInputType').value = effectiveType;
+    document.getElementById('cInputRoommateMode').value = cSelectedType === 'roommate' ? cRoommateMode : '';
+    document.getElementById('cFormBadge').className   = 'create-section-badge ' + cfg.badgeClass;
+    document.getElementById('cFormBadge').textContent = cfg.badge;
+    document.getElementById('cFormTitle').textContent = cfg.title;
+    document.getElementById('cFormDesc').textContent  = cfg.desc;
+    document.getElementById('cLabelPrice').innerHTML  = cfg.priceLabel + ' <span class="required">*</span>';
+    document.getElementById('cPrice').placeholder = '1000 ~ ' + cfg.maxPrice;
+    document.getElementById('cPrice').max         = cfg.maxPrice;
+    document.getElementById('cGroupFloor').style.display     = cfg.showFloor     ? 'block' : 'none';
+    document.getElementById('cGroupRentPeriod').style.display= cfg.showRentPeriod ? 'block' : 'none';
+    document.getElementById('cGroupGender').style.display    = cfg.showGender    ? 'block' : 'none';
+    document.getElementById('cGroupNeedCount').style.display = cfg.showNeedCount ? 'block' : 'none';
+    document.getElementById('cGroupImages').style.display    = cfg.showImages    ? 'block' : 'none';
+    document.getElementById('cGroupSubletExtras').style.display = cfg.showSubletFields ? 'block' : 'none';
+    const genderLabel = document.querySelector('#cGroupGender .form-label');
+    if (genderLabel) {
+        genderLabel.innerHTML = (effectiveType === 'sublet' ? '入住性别要求' : '性别要求') + ' <span class="required">*</span>';
+    }
+    if (cfg.showSubletFields) {
+        const moveInEl = document.getElementById('cMoveInDate');
+        const todayStr = new Date().toISOString().split('T')[0];
+        if (moveInEl) moveInEl.min = todayStr;
+    }
+}
+
+/* ==================== Radio Pills ==================== */
+function cCheckRadio(el, groupId) {
+    document.querySelectorAll('#' + groupId + ' .radio-pill').forEach(p => p.classList.remove('checked'));
+    el.classList.add('checked');
+    el.querySelector('input').checked = true;
+}
+
+/* ==================== Metro ==================== */
+function cToggleMetro() {
+    document.getElementById('cMetroDropdown').classList.toggle('open');
+}
+function cToggleMetroItem(el) {
+    el.classList.toggle('selected');
+    const name = el.textContent.trim();
+    if (el.classList.contains('selected')) {
+        if (!cSelectedMetros.includes(name)) cSelectedMetros.push(name);
+    } else {
+        cSelectedMetros = cSelectedMetros.filter(m => m !== name);
+    }
+    cRenderMetroTags();
+    document.getElementById('cMetroInput').value = cSelectedMetros.map(m => m.replace('🚇 ', '')).join(', ');
+}
+function cRemoveMetro(name) {
+    cSelectedMetros = cSelectedMetros.filter(m => m !== name);
+    document.querySelectorAll('#cMetroDropdown .metro-option').forEach(el => {
+        if (el.textContent.trim() === name) el.classList.remove('selected');
+    });
+    cRenderMetroTags();
+    document.getElementById('cMetroInput').value = cSelectedMetros.map(m => m.replace('🚇 ', '')).join(', ');
+}
+function cRenderMetroTags() {
+    const container = document.getElementById('cMetroTags');
+    if (cSelectedMetros.length === 0) {
+        container.innerHTML = '<span class="metro-placeholder">点击选择地铁站</span>';
+    } else {
+        container.innerHTML = cSelectedMetros.map(m =>
+            '<span class="metro-tag">' + m + ' <span class="metro-tag-x" onclick="event.stopPropagation();cRemoveMetro(\'' + m + '\')">×</span></span>'
+        ).join('');
+    }
+}
+document.addEventListener('click', function(e) {
+    const sel = document.getElementById('cMetroSelect');
+    if (sel && !sel.contains(e.target)) {
+        document.getElementById('cMetroDropdown').classList.remove('open');
+    }
+});
+
+/* ==================== Image Upload ==================== */
+function cHandleImages(input) {
+    const files  = Array.from(input.files);
+    const remain = 3 - cFileObjects.length;
+    if (remain <= 0) { showToast('最多上传3张图片', 'error'); input.value = ''; return; }
+    files.slice(0, remain).forEach(file => {
+        if (!['image/jpeg','image/png','image/webp','image/gif'].includes(file.type)) { showToast('仅支持 JPG/PNG/WEBP/GIF', 'error'); return; }
+        if (file.size > 5 * 1024 * 1024) { showToast(file.name + ' 超过5MB', 'error'); return; }
+        cFileObjects.push(file);
+        const reader = new FileReader();
+        reader.onload = function(e) { cUploadedImages.push(e.target.result); cRenderUploadArea(); };
+        reader.readAsDataURL(file);
+    });
+    input.value = '';
+    cSyncFilesToInput();
+}
+function cRemoveImage(idx) {
+    cUploadedImages.splice(idx, 1);
+    cFileObjects.splice(idx, 1);
+    cRenderUploadArea();
+    cSyncFilesToInput();
+}
+function cSyncFilesToInput() {
+    const input = document.getElementById('cFileInput');
+    if (!input) return;
+    try {
+        const dt = new DataTransfer();
+        cFileObjects.forEach(function(f) { dt.items.add(f); });
+        input.files = dt.files;
+    } catch (e) {
+        // DataTransfer not supported (older browsers) — files may not submit
+    }
+}
+function cRenderUploadArea() {
+    const area = document.getElementById('cUploadArea');
+    area.innerHTML = cUploadedImages.map((src, i) =>
+        '<div class="upload-slot"><img src="' + src + '" alt="预览"><div class="remove-img" onclick="event.stopPropagation();cRemoveImage(' + i + ')">×</div></div>'
+    ).join('');
+    if (cUploadedImages.length < 3) {
+        area.innerHTML += '<div class="upload-slot" onclick="document.getElementById(\'cFileInput\').click()"><span class="upload-slot-icon">📷</span><span class="upload-slot-text">添加图片</span></div>';
+    }
+}
+
+/* ==================== Char Counter ==================== */
+function cCharCount(el, max, countId) {
+    const len = el.value.length;
+    const counter = document.getElementById(countId);
+    if (!counter) return;
+    counter.textContent = len + '/' + max;
+    counter.className   = 'char-count' + (len > max ? ' over' : len > max * 0.85 ? ' warn' : '');
+}
+
+/* ==================== Validate ==================== */
+function cValidateForm() {
+    const cfg = C_TYPE_CONFIG[cGetEffectiveType()];
+    if (!cfg) { showToast('发布类型无效，请重新选择', 'error'); return false; }
+    let ok = true;
+    const err = (msg) => { showToast(msg, 'error'); ok = false; };
+
+    const title = document.getElementById('cTitle').value.trim();
+    if (title.length < 5 || title.length > 50) { err('标题需为5-50个字符'); return false; }
+
+    const price = parseFloat(document.getElementById('cPrice').value);
+    if (isNaN(price) || price < 1000 || price > cfg.maxPrice) { err('价格需在1000-' + cfg.maxPrice + '之间'); return false; }
+
+    if (cfg.showFloor && document.getElementById('cFloor').value.trim() === '') { err('请填写楼层信息'); return false; }
+    if (cfg.showNeedCount) {
+        const nc = parseInt(document.getElementById('cNeedCount').value);
+        if (isNaN(nc) || nc < 1 || nc > 10) { err('请输入1-10的需求人数'); return false; }
+    }
+    if (cfg.showRentPeriod && !document.querySelector('#cPeriodGroup input:checked')) { err('请选择租期'); return false; }
+    if (cfg.showGender && !document.querySelector('#cGenderGroup input:checked')) { err('请选择性别要求'); return false; }
+    if (cfg.showSubletFields) {
+        const remainingMonths = parseInt(document.getElementById('cRemainingMonths').value, 10);
+        if (isNaN(remainingMonths) || remainingMonths < 1 || remainingMonths > 36) {
+            err('租期剩余需为 1-36 个月'); return false;
+        }
+        const moveInDate = document.getElementById('cMoveInDate').value;
+        if (!moveInDate) { err('请选择最早入住日期'); return false; }
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const moveIn = new Date(moveInDate + 'T00:00:00');
+        if (Number.isNaN(moveIn.getTime()) || moveIn < today) {
+            err('最早入住日期不能早于今天'); return false;
+        }
+    }
+    if (!document.getElementById('cRegion').value) { err('请选择所属区域'); return false; }
+    if (!document.getElementById('cSchool').value) { err('请选择学校范围'); return false; }
+    if (cSelectedMetros.length === 0) { err('请选择至少一个地铁站'); return false; }
+
+    return ok;
+}
+
+/* ==================== Preview ==================== */
+function cBuildPreview() {
+    const cfg = C_TYPE_CONFIG[cGetEffectiveType()];
+    if (!cfg) return;
+    const periodMap = { short: '6个月以下', medium: '6个月至1年', long: '1年及以上' };
+    const genderMap = { male: '👨 男生', female: '👩 女生', any: '🤝 不限' };
+
+    const title    = document.getElementById('cTitle').value;
+    const price    = parseFloat(document.getElementById('cPrice').value) || 0;
+    const region   = document.getElementById('cRegion').value;
+    const school   = document.getElementById('cSchool').value;
+    const floor    = document.getElementById('cFloor').value;
+    const content  = document.getElementById('cContent').value;
+    const periodEl = document.querySelector('#cPeriodGroup input:checked');
+    const genderEl = document.querySelector('#cGenderGroup input:checked');
+    const needCount= document.getElementById('cNeedCount').value;
+    const remainingMonths = document.getElementById('cRemainingMonths').value;
+    const moveInDate = document.getElementById('cMoveInDate').value;
+    const renewableEl = document.querySelector('#cRenewableGroup input:checked');
+    const renewableMap = { yes: '可续租', no: '不可续租' };
+    const renewableStr = renewableEl ? renewableMap[renewableEl.value] : '-';
+    const periodStr = periodEl ? periodMap[periodEl.value] : '-';
+    const genderStr = genderEl ? genderMap[genderEl.value] : '-';
+    const imgSrc   = cUploadedImages.length > 0 ? cUploadedImages[0] : '';
+
+    // Card
+    let cardHtml = '<div class="preview-card">';
+    cardHtml += '<div class="preview-card-image">' + (imgSrc ? '<img src="' + imgSrc + '" style="width:100%;height:100%;object-fit:cover;">' : '📷') + '</div>';
+    cardHtml += '<div class="preview-card-body">';
+    cardHtml += '<span class="create-section-badge ' + cfg.badgeClass + '" style="margin-bottom:10px;">' + cfg.badge + '</span>';
+    cardHtml += '<div class="preview-card-title">' + esc(title) + '</div>';
+    cardHtml += '<div class="preview-card-price">' + price.toLocaleString() + '</div>';
+    cardHtml += '<div class="preview-tags">';
+    cardHtml += '<span class="tag tag-region">' + esc(region) + '</span>';
+    cSelectedMetros.forEach(m => { cardHtml += '<span class="tag tag-metro">' + esc(m) + '</span>'; });
+    cardHtml += '<span class="tag tag-school">' + esc(school) + '</span>';
+    cardHtml += '</div>';
+    let metaHtml = '<div class="preview-meta">';
+    if (cfg.showRentPeriod) {
+        metaHtml += '<div class="preview-meta-item"><div class="preview-meta-label">租期</div><div class="preview-meta-value">' + periodStr + '</div></div>';
+    }
+    if (cfg.showFloor) metaHtml += '<div class="preview-meta-item"><div class="preview-meta-label">楼层</div><div class="preview-meta-value">' + esc(floor||'-') + '</div></div>';
+    if (cfg.showGender) metaHtml += '<div class="preview-meta-item"><div class="preview-meta-label">性别要求</div><div class="preview-meta-value">' + genderStr + '</div></div>';
+    if (cfg.showNeedCount) metaHtml += '<div class="preview-meta-item"><div class="preview-meta-label">需求人数</div><div class="preview-meta-value">' + esc(needCount||'-') + '人</div></div>';
+    if (cfg.showSubletFields) {
+        metaHtml += '<div class="preview-meta-item"><div class="preview-meta-label">剩余租期</div><div class="preview-meta-value">' + esc(remainingMonths || '-') + '个月</div></div>';
+        metaHtml += '<div class="preview-meta-item"><div class="preview-meta-label">最早入住</div><div class="preview-meta-value">' + esc(moveInDate || '-') + '</div></div>';
+    }
+    metaHtml += '</div>';
+    cardHtml += metaHtml + '</div></div>';
+
+    // Detail box
+    const rows = [
+        ['📌 类型', cfg.badge],
+        ['💰 ' + cfg.priceLabel, price.toLocaleString() + ' HKD/月'],
+        ['📍 区域', region],
+        ['🏫 学校范围', school],
+        ['🚇 地铁站', cSelectedMetros.map(m => m.replace('🚇 ', '')).join('、') || '-'],
+    ];
+    if (cfg.showRentPeriod) rows.push(['📅 租期', periodStr]);
+    if (cfg.showFloor)     rows.push(['🏢 楼层', floor || '-']);
+    if (cfg.showGender)    rows.push(['👥 性别要求', genderStr]);
+    if (cfg.showNeedCount) rows.push(['🔢 需求人数', (needCount || '-') + ' 人']);
+    if (cfg.showSubletFields) {
+        rows.push(['⏳ 剩余租期', (remainingMonths || '-') + ' 个月']);
+        rows.push(['🗓️ 最早入住日期', moveInDate || '-']);
+        rows.push(['♻️ 可续租', renewableStr]);
+    }
+    if (content)           rows.push(['📝 其他信息', content]);
+
+    let detailHtml = '<div class="preview-detail-box"><h3 style="font-size:16px;font-weight:600;margin-bottom:16px;">📋 详细信息</h3>';
+    rows.forEach(([label, val]) => {
+        detailHtml += '<div class="preview-detail-row"><span class="preview-detail-label">' + esc(label) + '</span><span class="preview-detail-value">' + esc(val) + '</span></div>';
+    });
+    detailHtml += '</div>';
+
+    document.getElementById('cPreviewGrid').innerHTML = cardHtml + detailHtml;
+}
+
+function esc(str) {
+    const d = document.createElement('div'); d.textContent = String(str); return d.innerHTML;
+}
+
+/* ==================== Submit ==================== */
+function cSubmit() {
+    cSyncFilesToInput();
+    document.getElementById('cForm').submit();
+}
+
+/* ==================== Init ==================== */
+(function init() {
+    // 如果 PHP 回传了错误，直接显示第 2 步
+    <?php if (!empty($errors)): ?>
+    cSelectedType = <?php echo json_encode($form['type']); ?>;
+    cRoommateMode = <?php echo json_encode($form['roommate_mode']); ?>;
+    if (cSelectedType === 'roommate') {
+        cSelectType('roommate');
+        if (cRoommateMode) cSelectRoommateMode(cRoommateMode, true);
+    } else if (document.querySelector('.create-type-card[data-type="' + cSelectedType + '"]')) {
+        cSelectType(cSelectedType);
+    }
+    if (C_TYPE_CONFIG[cGetEffectiveType()]) {
+        document.getElementById('cSection1').style.display = 'none';
+        document.getElementById('cSection2').style.display = 'block';
+        document.getElementById('cStep1').classList.remove('active'); document.getElementById('cStep1').classList.add('done');
+        document.getElementById('cLine1').classList.add('done');
+        document.getElementById('cStep2').classList.add('active');
+        cConfigureForm();
+    }
+    // 恢复地铁站
+    <?php if ($form['metro_stations'] !== ''): ?>
+    (function() {
+        const metros = <?php echo json_encode(array_map('trim', explode(',', $form['metro_stations']))); ?>;
+        metros.forEach(m => {
+            document.querySelectorAll('#cMetroDropdown .metro-option').forEach(el => {
+                if (el.textContent.replace('🚇 ','').trim() === m) {
+                    el.classList.add('selected');
+                    cSelectedMetros.push(el.textContent.trim());
+                }
+            });
+        });
+        cRenderMetroTags();
+    })();
+    <?php endif; ?>
+    <?php endif; ?>
+})();
+</script>
