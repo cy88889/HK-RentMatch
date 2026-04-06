@@ -1,18 +1,27 @@
--- HK Postgrad Rent‑Match 初始化脚本
--- 一键导入：创建数据库、核心表（users, posts）及少量示例数据
+-- HK Postgrad Rent‑Match 初始化脚本（完整表结构）
+-- 一键导入：创建数据库、users / posts / favorites / applications 及少量示例数据
+-- 与当前代码版本一致；队友克隆仓库后执行本文件即可本地跑通，无需再执行 migrate.sql
+--
+-- 若你已有旧库且不能删表，请改用 migrate.sql 做增量升级，勿重复执行本文件整段 DROP。
 
--- 如果不存在则创建数据库（如需修改库名，可统一替换 hk_rentmatch）
+-- 如需修改库名，可全文替换 hk_rentmatch
 CREATE DATABASE IF NOT EXISTS `hk_rentmatch`
   DEFAULT CHARACTER SET utf8mb4
   COLLATE utf8mb4_unicode_ci;
 
 USE `hk_rentmatch`;
 
+-- 外键依赖顺序：先删子表
+SET FOREIGN_KEY_CHECKS = 0;
+DROP TABLE IF EXISTS `favorites`;
+DROP TABLE IF EXISTS `applications`;
+DROP TABLE IF EXISTS `posts`;
+DROP TABLE IF EXISTS `users`;
+SET FOREIGN_KEY_CHECKS = 1;
+
 -- =========================
 -- users 表：用户账号信息
 -- =========================
-DROP TABLE IF EXISTS `users`;
-
 CREATE TABLE `users` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `username` VARCHAR(50) NOT NULL COMMENT '昵称 / 显示名称',
@@ -23,17 +32,15 @@ CREATE TABLE `users` (
   `role` ENUM('student','landlord','admin') NOT NULL DEFAULT 'student' COMMENT '角色：学生/房东/管理员',
   `school` VARCHAR(120) DEFAULT NULL COMMENT '所属学校，例如 CityU, HKU',
   `status` ENUM('active','banned') NOT NULL DEFAULT 'active' COMMENT '账号状态',
+  `banned_until` DATETIME NULL DEFAULT NULL COMMENT '临时封禁到期时间；NULL 且 status=banned 表示永久封禁',
   `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uniq_email` (`email`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =========================
--- posts 表：租房帖子
--- 支持 rent / roommate / sublet
+-- posts 表：租房 / 找室友 / 转租
 -- =========================
-DROP TABLE IF EXISTS `posts`;
-
 CREATE TABLE `posts` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `user_id` INT UNSIGNED NOT NULL COMMENT '发布者 ID，对应 users.id',
@@ -67,17 +74,53 @@ CREATE TABLE `posts` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =========================
+-- favorites 表：用户收藏帖子
+-- =========================
+CREATE TABLE `favorites` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `user_id` INT UNSIGNED NOT NULL COMMENT '收藏用户 ID',
+  `post_id` INT UNSIGNED NOT NULL COMMENT '被收藏帖子 ID',
+  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '收藏时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uniq_user_post` (`user_id`, `post_id`),
+  KEY `idx_favorites_user_id` (`user_id`),
+  KEY `idx_favorites_post_id` (`post_id`),
+  CONSTRAINT `fk_favorites_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_favorites_post` FOREIGN KEY (`post_id`) REFERENCES `posts` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户收藏关系表';
+
+-- =========================
+-- applications 表：帖子申请
+-- =========================
+CREATE TABLE `applications` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `post_id` INT UNSIGNED NOT NULL COMMENT '申请目标帖子 ID',
+  `applicant_user_id` INT UNSIGNED NOT NULL COMMENT '申请人用户 ID',
+  `message` VARCHAR(500) DEFAULT NULL COMMENT '申请留言',
+  `status` ENUM('pending','accepted','rejected','withdrawn') NOT NULL DEFAULT 'pending' COMMENT '申请状态',
+  `owner_unread` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '房主尚未在「收到申请」分区查看过本条新申请',
+  `applicant_result_unread` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '申请人尚未看到同意/拒绝结果',
+  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '申请创建时间',
+  `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '状态更新时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_applications_post_id` (`post_id`),
+  KEY `idx_applications_applicant_user_id` (`applicant_user_id`),
+  KEY `idx_applications_status` (`status`),
+  KEY `idx_applications_applicant_result_unread` (`applicant_user_id`, `applicant_result_unread`),
+  CONSTRAINT `fk_applications_post` FOREIGN KEY (`post_id`) REFERENCES `posts` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_applications_applicant_user` FOREIGN KEY (`applicant_user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='帖子申请记录表';
+
+-- =========================
 -- 示例数据：方便开发调试
 -- 密码均为占位哈希，请在实际环境中用 PHP 的 password_hash 重新生成
 -- =========================
 
--- 示例用户
-INSERT INTO `users` (`username`, `email`, `password`, `phone`, `gender`, `role`, `school`, `status`)
+INSERT INTO `users` (`username`, `email`, `password`, `phone`, `gender`, `role`, `school`, `status`, `banned_until`)
 VALUES
-  ('Alice', 'alice@example.com', '$2y$10$exampleexampleexampleexampleexampleexampl', '5123-4567', 'female', 'student', 'CityU', 'active'),
-  ('Bob', 'bob@example.com', '$2y$10$exampleexampleexampleexampleexampleexampl', '5123-8888', 'male', 'landlord', 'HKU', 'active');
+  ('Alice', 'alice@example.com', '$2y$10$exampleexampleexampleexampleexampleexampl', '5123-4567', 'female', 'student', 'CityU', 'active', NULL),
+  ('Bob', 'bob@example.com', '$2y$10$exampleexampleexampleexampleexampleexampl', '5123-8888', 'male', 'landlord', 'HKU', 'active', NULL);
 
--- 示例帖子（假设上面插入的 id 为 1, 2）
 INSERT INTO `posts` (
   `user_id`, `type`, `title`, `content`, `price`, `floor`,
   `rent_period`, `region`, `school_scope`, `metro_stations`,
@@ -115,9 +158,10 @@ INSERT INTO `posts` (
 -- =========================
 -- 导入说明
 -- =========================
--- 【全新安装】直接在 phpMyAdmin 或命令行执行本文件即可，无需额外操作。
+-- 【全新本地环境】在 phpMyAdmin、MySQL Workbench、DBeaver 或命令行执行本文件即可：
+--   mysql -u root -p < database.sql
 --
--- 【已有旧表升级】如果 posts 表的 `type` 仍只有 `rent`，
--- 或缺少 gender_requirement / need_count / remaining_months / move_in_date / renewable 字段，
--- 或需要 `favorites` / `applications` 表及申请未读字段（`owner_unread`、`applicant_result_unread`），
--- 请执行项目根目录下的 migrate.sql 文件完成升级补充（说明见该文件头部注释）。
+-- 【从旧版本仓库升级已有数据库】若表已存在且含数据，请勿直接执行本文件（会 DROP 表）；
+--   请使用 migrate.sql 做增量变更。
+--
+-- 【与 migrate.sql 的关系】migrate.sql 面向「已有旧表结构」的升级；全新安装以本文件为准，无需再跑 migrate.sql。

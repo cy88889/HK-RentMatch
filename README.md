@@ -82,10 +82,12 @@ hk-rentmatch/
 脚本会自动完成：
 
 - 如果不存在就创建数据库：`hk_rentmatch`
-- 创建用户表 `users` 与帖子表 `posts`
+- 创建表：`users`、`posts`、`favorites`、`applications`（与当前代码一致）
 - 写入 2 个示例用户和若干示例房源数据，便于开发调试
 
-导入成功后，左侧可以看到 `hk_rentmatch` 数据库及其 `users` / `posts` 两张表。
+全新安装**只需**执行 `database.sql`，无需再跑 `migrate.sql`。若你本地是从很旧的库升级、不能删表，再使用根目录下的 `migrate.sql` 做增量变更。
+
+导入成功后，左侧可以看到 `hk_rentmatch` 数据库及上述表。
 
 ### 4. 配置数据库连接（`includes/config.php`）
 
