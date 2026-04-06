@@ -128,7 +128,7 @@ erDiagram
 | `active` | 正常，可正常使用平台 |
 | `banned` | 封禁，禁止登录       |
 
-与 `banned_until` 的组合：`status='banned'` 且 `banned_until` 非空表示临时封禁，到期后 `login.php` 会在校验时自动将账号恢复为 `active` 并清空 `banned_until`；`status='banned'` 且 `banned_until` 为 `NULL` 表示永久封禁（不会自动解封）。本字段由 `migrate.sql` 添加，全新仅执行 `database.sql` 的环境需跑迁移后才有该列。
+与 `banned_until` 的组合：`status='banned'` 且 `banned_until` 非空表示临时封禁，到期后 `login.php` 会在校验时自动将账号恢复为 `active` 并清空 `banned_until`；`status='banned'` 且 `banned_until` 为 `NULL` 表示永久封禁（不会自动解封）。当前仓库中的 `database.sql` 已包含本列；极旧库升级可依赖 `migrate.sql`。
 
 ### 索引
 
