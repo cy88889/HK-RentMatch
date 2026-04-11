@@ -75,8 +75,11 @@ if ($tab === 'roommate' && in_array($gender, ['male', 'female', 'any'], true)) {
 }
 
 if ($keyword !== '') {
-    $where[]            = '(p.title LIKE :kw OR p.content LIKE :kw)';
-    $params[':kw'] = '%' . $keyword . '%';
+    // 两处 LIKE 须用不同占位符名；PDO 不能对同名 :kw 绑定两次
+    $kw                     = '%' . $keyword . '%';
+    $where[]                = '(p.title LIKE :kw_title OR p.content LIKE :kw_content)';
+    $params[':kw_title']   = $kw;
+    $params[':kw_content'] = $kw;
 }
 
 $whereSql = implode(' AND ', $where);
