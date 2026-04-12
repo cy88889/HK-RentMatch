@@ -129,6 +129,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // 地铁站
     if ($form['metro_stations'] === '') {
         $errors['metro_stations'] = '请选择至少一个地铁站。';
+    } else {
+        $metroArray = explode(',', $form['metro_stations']);
+        $metroArray = array_filter(array_map('trim', $metroArray));
+        
+        if (count($metroArray) > 5) {
+            $errors['metro_stations'] = '最多选择 5 个地铁站！';
+        }
     }
 
     // 图片处理（租房 / 转租 / 有房找室友支持图片）
@@ -508,18 +515,138 @@ include __DIR__ . '/../includes/header.php';
                         <span style="color:var(--text-hint);font-size:12px;">▼</span>
                     </div>
                     <div class="metro-dropdown" id="cMetroDropdown">
-                        <?php
-                        $metros = ['九龙塘','旺角','太子','沙田','大学','大围','香港大学','中环','金钟',
-                                   '铜锣湾','坑口','将军澳','荃湾','葵芳','屯门','元朗'];
-                        foreach ($metros as $m): ?>
-                            <div class="metro-option" onclick="cToggleMetroItem(this)">
-                                <div class="metro-option-check"></div>
-                                🚇 <?php echo htmlspecialchars($m); ?>
+                        <!-- 搜索框 -->
+                        <div style="padding:8px 12px; border-bottom:1px solid #eee;">
+                            <input
+                                type="text"
+                                id="metroSearch"
+                                placeholder="搜索地铁站..."
+                                style="width:100%; padding:6px 10px; border:1px solid #ddd; border-radius:6px; outline:none;"
+                                oninput="filterMetroStations()">
+                        </div>
+
+                        <!-- 线路按钮 -->
+                        <div style="display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px; border-bottom: 1px solid #eee;">
+                            <button type="button" class="metro-line-btn all" onclick="switchMetroLine('all')">全部</button>
+                            <button type="button" class="metro-line-btn line1" onclick="switchMetroLine('东铁线')">东铁线</button>
+                            <button type="button" class="metro-line-btn line2" onclick="switchMetroLine('观塘线')">观塘线</button>
+                            <button type="button" class="metro-line-btn line3" onclick="switchMetroLine('港岛线')">港岛线</button>
+                            <button type="button" class="metro-line-btn line4" onclick="switchMetroLine('荃湾线')">荃湾线</button>
+                            <button type="button" class="metro-line-btn line5" onclick="switchMetroLine('屯马线')">屯马线</button>
+                            <button type="button" class="metro-line-btn line6" onclick="switchMetroLine('东涌线')">东涌线</button>
+                            <button type="button" class="metro-line-btn line7" onclick="switchMetroLine('将军澳线')">将军澳线</button>
+                            <button type="button" class="metro-line-btn line8" onclick="switchMetroLine('南港岛线')">南港岛线</button>
+                            <button type="button" class="metro-line-btn line9" onclick="switchMetroLine('机场快线')">机场快线</button>
+                            <button type="button" class="metro-line-btn line10" onclick="switchMetroLine('迪士尼线')">迪士尼线</button>
+                        </div>
+
+                        <!-- 地铁站分线路列表 -->
+                        <div style="max-height:240px; overflow-y:auto; padding:4px 0;" id="metroStationList">
+                            <!-- 东铁线 -->
+                            <div class="metro-line-group" data-line="东铁线">
+                                <?php $metros = ['金钟','会展','红磡','旺角东','九龙塘','大围','沙田','火炭','马场','大学','大埔墟','太和','粉岭','上水','落马洲','罗湖']; ?>
+                                <?php foreach ($metros as $m): ?>
+                                    <div class="metro-option" onclick="cToggleMetroItem(this)" data-name="<?php echo trim($m); ?>">
+                                        <div class="metro-option-check"></div>
+                                        🚇 <?php echo htmlspecialchars($m); ?>
+                                    </div>
+                                <?php endforeach; ?>
                             </div>
-                        <?php endforeach; ?>
+                            <!-- 观塘线 -->
+                            <div class="metro-line-group" data-line="观塘线">
+                                <?php $metros = ['黄埔','何文田','油麻地','旺角','太子','石硖尾','九龙塘','乐富','黄大仙','钻石山','彩虹','九龙湾','牛头角','观塘','蓝田','油塘','调景岭']; ?>
+                                <?php foreach ($metros as $m): ?>
+                                    <div class="metro-option" onclick="cToggleMetroItem(this)" data-name="<?php echo trim($m); ?>">
+                                        <div class="metro-option-check"></div>
+                                        🚇 <?php echo htmlspecialchars($m); ?>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                            <!-- 港岛线 -->
+                            <div class="metro-line-group" data-line="港岛线">
+                                <?php $metros = ['坚尼地城','香港大学','西营盘','上环','中环','金钟','湾仔','铜锣湾','天后','炮台山','北角','鲗鱼涌','太古','西湾河','筲箕湾','杏花邨','柴湾']; ?>
+                                <?php foreach ($metros as $m): ?>
+                                    <div class="metro-option" onclick="cToggleMetroItem(this)" data-name="<?php echo trim($m); ?>">
+                                        <div class="metro-option-check"></div>
+                                        🚇 <?php echo htmlspecialchars($m); ?>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                            <!-- 荃湾线 -->
+                            <div class="metro-line-group" data-line="荃湾线">
+                                <?php $metros = ['荃湾','大窝口','葵兴','葵芳','荔景','美孚','荔枝角','长沙湾','深水埗','太子','旺角','油麻地','佐敦','尖沙咀','金钟','中环']; ?>
+                                <?php foreach ($metros as $m): ?>
+                                    <div class="metro-option" onclick="cToggleMetroItem(this)" data-name="<?php echo trim($m); ?>">
+                                        <div class="metro-option-check"></div>
+                                        🚇 <?php echo htmlspecialchars($m); ?>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                            <!-- 屯马线 -->
+                            <div class="metro-line-group" data-line="屯马线">
+                                <?php $metros = ['屯门','兆康','天水围','朗屏','元朗','锦上路','荃湾西','美孚','南昌','柯士甸','尖东','红磡','何文田','土瓜湾','宋皇台','启德','钻石山','显径','大围','车公庙','沙田围','第一城','石门','大水坑','恒安','马鞍山','乌溪沙']; ?>
+                                <?php foreach ($metros as $m): ?>
+                                    <div class="metro-option" onclick="cToggleMetroItem(this)" data-name="<?php echo trim($m); ?>">
+                                        <div class="metro-option-check"></div>
+                                        🚇 <?php echo htmlspecialchars($m); ?>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                            <!-- 东涌线 -->
+                            <div class="metro-line-group" data-line="东涌线">
+                                <?php $metros = ['香港','九龙','奥运','南昌','荔景','青衣','欣澳','东涌']; ?>
+                                <?php foreach ($metros as $m): ?>
+                                    <div class="metro-option" onclick="cToggleMetroItem(this)" data-name="<?php echo trim($m); ?>">
+                                        <div class="metro-option-check"></div>
+                                        🚇 <?php echo htmlspecialchars($m); ?>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                            <!-- 将军澳线 -->
+                            <div class="metro-line-group" data-line="将军澳线">
+                                <?php $metros = ['北角','鲗鱼涌','油塘','调景岭','将军澳','坑口','宝琳','康城']; ?>
+                                <?php foreach ($metros as $m): ?>
+                                    <div class="metro-option" onclick="cToggleMetroItem(this)" data-name="<?php echo trim($m); ?>">
+                                        <div class="metro-option-check"></div>
+                                        🚇 <?php echo htmlspecialchars($m); ?>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                            <!-- 南港岛线 -->
+                            <div class="metro-line-group" data-line="南港岛线">
+                                <?php $metros = ['金钟','海洋公园','黄竹坑','利东','海怡半岛']; ?>
+                                <?php foreach ($metros as $m): ?>
+                                    <div class="metro-option" onclick="cToggleMetroItem(this)" data-name="<?php echo trim($m); ?>">
+                                        <div class="metro-option-check"></div>
+                                        🚇 <?php echo htmlspecialchars($m); ?>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                            <!-- 机场快线 -->
+                            <div class="metro-line-group" data-line="机场快线">
+                                <?php $metros = ['博览馆','机场','青衣','九龙','香港']; ?>
+                                <?php foreach ($metros as $m): ?>
+                                    <div class="metro-option" onclick="cToggleMetroItem(this)" data-name="<?php echo trim($m); ?>">
+                                        <div class="metro-option-check"></div>
+                                        🚇 <?php echo htmlspecialchars($m); ?>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                            <!-- 迪士尼线 -->
+                            <div class="metro-line-group" data-line="迪士尼线">
+                                <?php $metros = ['迪士尼']; ?>
+                                <?php foreach ($metros as $m): ?>
+                                    <div class="metro-option" onclick="cToggleMetroItem(this)" data-name="<?php echo trim($m); ?>">
+                                        <div class="metro-option-check"></div>
+                                        🚇 <?php echo htmlspecialchars($m); ?>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
+            <!-- 地铁站多选 -->
 
             <hr class="create-form-divider">
 
@@ -710,24 +837,63 @@ function cCheckRadio(el, groupId) {
 }
 
 /* ==================== Metro ==================== */
+let currentMetroLine = 'all';
 function cToggleMetro() {
     document.getElementById('cMetroDropdown').classList.toggle('open');
 }
+function cToggleMetro() {
+    document.getElementById('cMetroDropdown').classList.toggle('open');
+}
+
 function cToggleMetroItem(el) {
+    if (!el.classList.contains('selected') && cSelectedMetros.length >= 5) {
+        showToast('最多只能选择 5 个地铁站', 'error');
+        return;
+    }
+
     el.classList.toggle('selected');
-    const name = el.textContent.trim();
+    const name = '🚇 ' + el.dataset.name.trim();
+
     if (el.classList.contains('selected')) {
         if (!cSelectedMetros.includes(name)) cSelectedMetros.push(name);
     } else {
         cSelectedMetros = cSelectedMetros.filter(m => m !== name);
     }
+
     cRenderMetroTags();
     document.getElementById('cMetroInput').value = cSelectedMetros.map(m => m.replace('🚇 ', '')).join(', ');
 }
+function filterMetroStations() {
+    const kw = document.getElementById('metroSearch').value.toLowerCase().trim();
+    const items = document.querySelectorAll('.metro-option');
+
+    if (kw !== '') {
+        items.forEach(item => {
+            const name = (item.dataset.name || '').toLowerCase();
+            item.style.display = name.includes(kw) ? 'flex' : 'none';
+        });
+    } else {
+        items.forEach(item => item.style.display = 'flex');
+        switchMetroLine(currentMetroLine);
+    }
+}
+function switchMetroLine(line) {
+    currentMetroLine = line;
+    document.querySelectorAll('.metro-line-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelector(`.metro-line-btn[onclick="switchMetroLine('${line}')"]`).classList.add('active');
+    
+    document.querySelectorAll('.metro-line-group').forEach(g => g.style.display = 'none');
+    if (line === 'all') {
+        document.querySelectorAll('.metro-line-group').forEach(g => g.style.display = 'block');
+    } else {
+        document.querySelector(`.metro-line-group[data-line="${line}"]`).style.display = 'block';
+    }
+}
+
 function cRemoveMetro(name) {
     cSelectedMetros = cSelectedMetros.filter(m => m !== name);
     document.querySelectorAll('#cMetroDropdown .metro-option').forEach(el => {
-        if (el.textContent.trim() === name) el.classList.remove('selected');
+        if (('🚇 ' + el.dataset.name.trim()) === name) el.classList.remove('selected');
     });
     cRenderMetroTags();
     document.getElementById('cMetroInput').value = cSelectedMetros.map(m => m.replace('🚇 ', '')).join(', ');

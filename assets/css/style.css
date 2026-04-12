@@ -1967,3 +1967,36 @@ textarea {
     .step-label { display: none; }
 }
 
+/* 地铁线路按钮 */
+.metro-line-btn {
+    padding: 3px 8px;
+    border-radius: 50px;
+    font-size: 12px;
+    font-weight: 500;
+    background: #f5f5f5;
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: all 0.2s;
+    border: none;
+}
+.metro-line-btn:hover {
+    background: var(--primary-bg);
+    color: var(--primary);
+}
+.metro-line-btn.active {
+  font-weight: 700;
+  transform: scale(1.05);
+  color: #fff;
+  opacity: 1;
+}
+.metro-line-btn.all { background: #e6e6e6; color: #000; }
+.metro-line-btn.line1 { background: #67b4e9; color: #fff; }
+.metro-line-btn.line2 { background: #00ab4d; color: #fff; }
+.metro-line-btn.line3 { background: #1270b7; color: #fff; }
+.metro-line-btn.line4 { background: #e51f1e; color: #fff; }
+.metro-line-btn.line5 { background: #9e2e00; color: #fff; }
+.metro-line-btn.line6 { background: #ed9649; color: #fff; }
+.metro-line-btn.line7 { background: #78509e; color: #fff; }
+.metro-line-btn.line8 { background: #aec804; color: #fff; }
+.metro-line-btn.line9 { background: #0a858a; color: #fff; }
+.metro-line-btn.line10 { background: #e771ad; color: #fff; }
