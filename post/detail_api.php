@@ -47,7 +47,8 @@ $periodMap = [
 ];
 $genderMap = ['male' => '仅限男生', 'female' => '仅限女生', 'any' => '男女不限'];
 $renewableMap = ['yes' => '可续租', 'no' => '不可续租'];
-$roleLabel = ($post['user_role'] ?? '') === 'landlord' ? '🏢 房源供给方' : '🎓 港硕学生';
+$roleLabelMap = ['landlord' => '🏢 房源供给方', 'admin' => '⚙️ 管理员', 'student' => '🎓 港硕学生'];
+$roleLabel = $roleLabelMap[$post['user_role'] ?? 'student'] ?? '🎓 港硕学生';
 
 $images = parse_post_images($post['images'] ?? null);
 $fallback1 = 'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=600&h=400&fit=crop';

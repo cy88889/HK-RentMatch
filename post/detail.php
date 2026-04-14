@@ -183,7 +183,8 @@ switch ($post['rent_period']) {
         break;
 }
 
-$roleLabel = $post['user_role'] === 'landlord' ? '🏢 房源供给方' : '🎓 港硕学生';
+$roleLabelMap = ['landlord' => '🏢 房源供给方', 'admin' => '⚙️ 管理员', 'student' => '🎓 港硕学生'];
+$roleLabel = $roleLabelMap[$post['user_role'] ?? 'student'] ?? '🎓 港硕学生';
 $images = parse_post_images($post['images'] ?? null);
 $fallback1 = 'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=600&h=400&fit=crop';
 $fallback2 = 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=300&h=200&fit=crop';

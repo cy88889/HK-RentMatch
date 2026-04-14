@@ -255,7 +255,7 @@ if (!$profileUser) {
     exit;
 }
 
-$isStudent = ($profileUser['role'] ?? '') === 'student';
+$isStudent = ($profileUser['role'] ?? '') !== 'landlord';
 
 if ($section === 'applications') {
     $clearApplicantUnread = $pdo->prepare(
@@ -521,7 +521,8 @@ $applicationStatusMap = [
     'rejected' => '已拒绝',
     'withdrawn' => '已撤回',
 ];
-$roleDisplay = $profileUser['role'] === 'landlord' ? '🏢 房源供给方' : '🎓 港硕学生';
+$roleMap = ['landlord' => '🏢 房源供给方', 'admin' => '⚙️ 管理员', 'student' => '🎓 港硕学生'];
+$roleDisplay = $roleMap[$profileUser['role'] ?? 'student'] ?? '🎓 港硕学生';
 $genderDisplay = $genderTextMap[$profileUser['gender'] ?? 'other'] ?? '其他';
 $userSchoolDisplay = school_display_name($profileUser['school'] ?? null);
 
