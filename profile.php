@@ -713,7 +713,7 @@ include __DIR__ . '/includes/header.php';
                                     </div>
 
                                     <div class="my-post-actions">
-                                        <a class="btn btn-outline btn-small icon-only-btn" href="<?php echo htmlspecialchars(project_base_url('post/detail.php?id=' . (int) $post['id'])); ?>" title="编辑" aria-label="编辑">
+                                        <a class="btn btn-outline btn-small icon-only-btn" href="<?php echo htmlspecialchars(project_base_url('post/edit.php?id=' . (int) $post['id'])); ?>" title="编辑" aria-label="编辑">
                                             <span class="icon-feather" style="--icon-url:url('<?php echo htmlspecialchars(project_base_url('feather/edit.svg')); ?>');"></span>
                                         </a>
                                         <form method="post" class="js-post-status-form">

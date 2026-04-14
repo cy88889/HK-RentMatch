@@ -230,9 +230,9 @@ include __DIR__ . '/includes/header.php';
                 <div class="filter-group">
                     <label class="filter-label">租金范围</label>
                     <div class="price-range">
-                        <input type="number" class="filter-input" placeholder="最低" id="minPrice" name="min_price" value="<?php echo $minPrice > 0 ? htmlspecialchars((string) $minPrice) : ''; ?>">
+                        <input type="number" class="filter-input" placeholder="最低" id="minPrice" name="min_price" min="0" step="500" value="<?php echo $minPrice > 0 ? htmlspecialchars((string) $minPrice) : ''; ?>">
                         <span>-</span>
-                        <input type="number" class="filter-input" placeholder="最高" id="maxPrice" name="max_price" value="<?php echo $maxPrice > 0 ? htmlspecialchars((string) $maxPrice) : ''; ?>">
+                        <input type="number" class="filter-input" placeholder="最高" id="maxPrice" name="max_price" min="0" step="500" value="<?php echo $maxPrice > 0 ? htmlspecialchars((string) $maxPrice) : ''; ?>">
                     </div>
                 </div>
 
@@ -781,10 +781,33 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 <?php endif; ?>
-
 <script>
 window.initialFavoritePostIds = <?php echo json_encode($favoritePostIds, JSON_UNESCAPED_UNICODE); ?>;
 </script>
+<!-- 租金范围处理逻辑 -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const minInput = document.getElementById('minPrice');
+    const maxInput = document.getElementById('maxPrice');
 
+    function fixPriceRange() {
+        let min = parseInt(minInput.value) || 0;
+        let max = parseInt(maxInput.value) || 0;
+
+        if (min < 0) min = 0;
+        if (max < 0) max = 0;
+
+        if (min !== 0 && max !== 0 && min > max) {
+            [min, max] = [max, min];
+        }
+
+        minInput.value = min || '';
+        maxInput.value = max || '';
+    }
+
+    minInput.addEventListener('change', fixPriceRange);
+    maxInput.addEventListener('change', fixPriceRange);
+});
+</script>
 <?php include __DIR__ . '/includes/footer.php'; ?>
 
