@@ -166,6 +166,15 @@
     var banDuration = qs('#adminBanDuration');
     var pendingBanUserId = null;
     var pendingBanMode = null;
+    var selectedBanDuration = '7';
+
+    if (banModal) {
+        qsa('input[name="ban_duration_ui"]', banModal).forEach(function (radio) {
+            radio.addEventListener('change', function () {
+                selectedBanDuration = this.value;
+            });
+        });
+    }
 
     var usersBatchForm = qs('#adminUsersBatchForm');
     var usersBatchActionInput = qs('#adminUsersBatchActionInput');
@@ -217,6 +226,7 @@
             banUserLine.textContent = '将封禁选中的 ' + n + ' 个用户（不含管理员账号），被选中但已是「正常」以外状态的行将被跳过。';
             var firstRadio = qs('input[name="ban_duration_ui"][value="7"]', banModal);
             if (firstRadio) firstRadio.checked = true;
+            selectedBanDuration = '7';
             openModal(banModal);
         });
     }
@@ -249,6 +259,7 @@
             }
             var firstRadio = qs('input[name="ban_duration_ui"][value="7"]', banModal);
             if (firstRadio) firstRadio.checked = true;
+            selectedBanDuration = '7';
             openModal(banModal);
         });
     });
@@ -265,8 +276,7 @@
 
     if (banConfirm && banForm && banUserId && banDuration) {
         banConfirm.addEventListener('click', function () {
-            var selected = qs('input[name="ban_duration_ui"]:checked', banModal);
-            var dur = selected ? selected.value : '7';
+            var dur = selectedBanDuration || '7';
 
             if (pendingBanMode === 'batch') {
                 if (!usersBatchForm || !usersBatchActionInput || !usersBatchBanDuration) {

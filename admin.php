@@ -208,8 +208,10 @@ if ($section === 'posts') {
         $where[] = "p.status = 'deleted'";
     }
     if ($postQ !== '') {
-        $where[] = '(p.title LIKE :pq OR u.username LIKE :pq OR u.email LIKE :pq)';
-        $params[':pq'] = '%' . $postQ . '%';
+        $where[] = '(p.title LIKE :pq1 OR u.username LIKE :pq2 OR u.email LIKE :pq3)';
+        $params[':pq1'] = '%' . $postQ . '%';
+        $params[':pq2'] = '%' . $postQ . '%';
+        $params[':pq3'] = '%' . $postQ . '%';
     }
     $whereSql = implode(' AND ', $where);
 
@@ -252,8 +254,9 @@ if ($section === 'users') {
         $where[] = "u.status = 'banned'";
     }
     if ($userQ !== '') {
-        $where[] = '(u.username LIKE :uq OR u.email LIKE :uq)';
-        $params[':uq'] = '%' . $userQ . '%';
+        $where[] = '(u.username LIKE :uq1 OR u.email LIKE :uq2)';
+        $params[':uq1'] = '%' . $userQ . '%';
+        $params[':uq2'] = '%' . $userQ . '%';
     }
     $whereSql = implode(' AND ', $where);
 

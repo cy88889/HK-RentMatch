@@ -333,7 +333,8 @@ include __DIR__ . '/includes/header.php';
                     } elseif (($post['rent_period'] ?? '') === 'medium') {
                         $periodLabel = '6个月-1年';
                     }
-                    $roleLabel = ($post['user_role'] ?? '') === 'landlord' ? '🏢 房源供给方' : '🎓 港硕学生';
+                    $roleLabelMap = ['landlord' => '🏢 房源供给方', 'admin' => '⚙️ 管理员', 'student' => '🎓 港硕学生'];
+                    $roleLabel = $roleLabelMap[$post['user_role'] ?? 'student'] ?? '🎓 港硕学生';
                     $authorSchoolText = school_display_name($post['user_school'] ?? null);
                     $authorRoleText = $roleLabel . ($authorSchoolText !== '' ? (' · ' . $authorSchoolText) : '');
                     if (!empty($user) && !empty($post['user_phone'])) {
