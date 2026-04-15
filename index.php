@@ -17,6 +17,17 @@ if (!in_array($sort, ['newest', 'price-asc', 'price-desc'], true)) {
     $sort = 'newest';
 }
 
+// 首页统计数据
+$heroStats = $pdo->query("
+    SELECT
+        (SELECT COUNT(*) FROM posts WHERE status = 'active') AS active_posts,
+        (SELECT COUNT(*) FROM users) AS total_users,
+        (SELECT COUNT(*) FROM applications WHERE status = 'accepted') AS matched
+")->fetch(PDO::FETCH_ASSOC);
+$statActivePosts = number_format((int)($heroStats['active_posts'] ?? 0));
+$statTotalUsers  = number_format((int)($heroStats['total_users']  ?? 0));
+$statMatched     = number_format((int)($heroStats['matched']      ?? 0));
+
 // 读取 Tab 类型参数（兼容旧值 roommate-source / roommate-nosource）
 $rawTab = isset($_GET['tab']) ? trim($_GET['tab']) : 'rent';
 if (in_array($rawTab, ['roommate-source', 'roommate-nosource'], true)) {
@@ -151,15 +162,15 @@ include __DIR__ . '/includes/header.php';
         </button>
         <div class="hero-stats">
             <div class="stat-item">
-                <div class="stat-number">1,234</div>
+                <div class="stat-number"><?php echo htmlspecialchars($statActivePosts); ?></div>
                 <div class="stat-label">活跃房源</div>
             </div>
             <div class="stat-item">
-                <div class="stat-number">5,678</div>
+                <div class="stat-number"><?php echo htmlspecialchars($statTotalUsers); ?></div>
                 <div class="stat-label">注册用户</div>
             </div>
             <div class="stat-item">
-                <div class="stat-number">890</div>
+                <div class="stat-number"><?php echo htmlspecialchars($statMatched); ?></div>
                 <div class="stat-label">成功匹配</div>
             </div>
         </div>
@@ -475,7 +486,12 @@ include __DIR__ . '/includes/header.php';
                     </div>
                     <div class="form-group">
                         <label class="form-label">密码 <span class="required">*</span></label>
-                        <input type="password" class="form-input" name="password" placeholder="请输入密码" required>
+                        <div class="password-wrapper">
+                            <input type="password" class="form-input" name="password" placeholder="请输入密码" required>
+                            <button type="button" class="password-toggle" aria-label="查看密码">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                            </button>
+                        </div>
                         <div class="form-hint">密码为8-20位，包含大小写字母和数字</div>
                     </div>
                     <button type="submit" class="btn btn-primary btn-block">登录</button>
@@ -553,12 +569,22 @@ include __DIR__ . '/includes/header.php';
 
                     <div class="form-group">
                         <label class="form-label">密码 <span class="required">*</span></label>
-                        <input type="password" class="form-input" placeholder="8-20位，含大小写字母和数字" id="registerPassword" name="password">
+                        <div class="password-wrapper">
+                            <input type="password" class="form-input" placeholder="8-20位，含大小写字母和数字" id="registerPassword" name="password">
+                            <button type="button" class="password-toggle" aria-label="查看密码">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                            </button>
+                        </div>
                     </div>
 
                     <div class="form-group">
                         <label class="form-label">确认密码 <span class="required">*</span></label>
-                        <input type="password" class="form-input" placeholder="请再次输入密码" id="registerPasswordConfirm" name="password_confirm">
+                        <div class="password-wrapper">
+                            <input type="password" class="form-input" placeholder="请再次输入密码" id="registerPasswordConfirm" name="password_confirm">
+                            <button type="button" class="password-toggle" aria-label="查看密码">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                            </button>
+                        </div>
                     </div>
 
                     <button type="submit" class="btn btn-primary btn-block">注册</button>

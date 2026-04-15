@@ -69,15 +69,6 @@ function switchModal(fromId, toId) {
     setTimeout(() => openModal(toId), 200);
 }
 
-document.querySelectorAll('.modal-overlay').forEach(overlay => {
-    overlay.addEventListener('click', function(e) {
-        if (e.target === this) {
-            this.classList.remove('active');
-            document.body.style.overflow = '';
-        }
-    });
-});
-
 // ==================== Auth Functions ====================
 function handleLogin(e) {
     e.preventDefault();
@@ -688,5 +679,17 @@ document.querySelectorAll('.page-btn:not(:disabled)').forEach(btn => {
             showToast('加载中...', 'success');
         }
     });
+});
+
+// ==================== Password Toggle (hold to show) ====================
+document.querySelectorAll('.password-toggle').forEach(btn => {
+    const input = btn.closest('.password-wrapper').querySelector('input');
+    const show = () => { input.type = 'text'; };
+    const hide = () => { input.type = 'password'; };
+    btn.addEventListener('mousedown', (e) => { e.preventDefault(); show(); });
+    btn.addEventListener('mouseup', hide);
+    btn.addEventListener('mouseleave', hide);
+    btn.addEventListener('touchstart', (e) => { e.preventDefault(); show(); }, { passive: false });
+    btn.addEventListener('touchend', hide);
 });
 

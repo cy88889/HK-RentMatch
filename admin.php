@@ -274,7 +274,7 @@ if ($section === 'users') {
         "SELECT u.id, u.username, u.email, u.phone, u.role, u.status, u.banned_until, u.created_at
          FROM users u
          WHERE $whereSql
-         ORDER BY u.created_at DESC
+         ORDER BY (u.role = 'admin') DESC, u.created_at DESC
          LIMIT :lim OFFSET :off"
     );
     foreach ($params as $k => $v) {
