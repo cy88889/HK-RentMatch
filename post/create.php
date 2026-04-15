@@ -383,6 +383,7 @@ include __DIR__ . '/../includes/header.php';
                     <div style="position:relative;">
                         <input type="number" class="form-input" name="price" id="cPrice"
                                placeholder="1000 ~ 100000" min="1000" max="100000"
+                               step="500"
                                style="padding-right:56px;"
                                value="<?php echo htmlspecialchars($form['price']); ?>">
                         <span style="position:absolute;right:14px;top:50%;transform:translateY(-50%);color:var(--text-hint);font-size:13px;">HKD/月</span>
@@ -542,6 +543,24 @@ include __DIR__ . '/../includes/header.php';
 
                         <!-- 地铁站分线路列表 -->
                         <div style="max-height:240px; overflow-y:auto; padding:4px 0;" id="metroStationList">
+                             <div class="metro-line-group" data-line="all">
+                                <?php $allMetros = ['金钟','会展','红磡','旺角东','九龙塘','大围','沙田','火炭','马场','大学','大埔墟','太和','粉岭','上水','落马洲','罗湖',
+                                                    '黄埔','何文田','油麻地','旺角','太子','石硖尾','乐富','黄大仙','钻石山','彩虹','九龙湾','牛头角','观塘','蓝田','油塘','调景岭',
+                                                    '坚尼地城','香港大学','西营盘','上环','中环','湾仔','铜锣湾','天后','炮台山','北角','鲗鱼涌','太古','西湾河','筲箕湾','杏花邨','柴湾',
+                                                    '荃湾','大窝口','葵兴','葵芳','荔景','美孚','荔枝角','长沙湾','深水埗','佐敦','尖沙咀',
+                                                    '屯门','兆康','天水围','朗屏','元朗','锦上路','荃湾西','南昌','柯士甸','尖东','土瓜湾','宋皇台','启德','显径','车公庙','沙田围','第一城','石门','大水坑','恒安','马鞍山','乌溪沙',
+                                                    '香港','九龙','奥运','青衣','欣澳','东涌',
+                                                    '将军澳','坑口','宝琳','康城',
+                                                    '海洋公园','黄竹坑','利东','海怡半岛',
+                                                    '博览馆','机场','迪士尼'
+                                ]; ?>
+                            <?php foreach ($allMetros as $m): ?>
+                                <div class="metro-option" onclick="cToggleMetroItem(this)" data-name="<?php echo trim($m); ?>">
+                                    <div class="metro-option-check"></div>
+                                    🚇 <?php echo htmlspecialchars($m); ?>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
                             <!-- 东铁线 -->
                             <div class="metro-line-group" data-line="东铁线">
                                 <?php $metros = ['金钟','会展','红磡','旺角东','九龙塘','大围','沙田','火炭','马场','大学','大埔墟','太和','粉岭','上水','落马洲','罗湖']; ?>
@@ -884,8 +903,10 @@ function switchMetroLine(line) {
     
     document.querySelectorAll('.metro-line-group').forEach(g => g.style.display = 'none');
     if (line === 'all') {
-        document.querySelectorAll('.metro-line-group').forEach(g => g.style.display = 'block');
-    } else {
+    document.querySelectorAll('.metro-line-group').forEach(g => g.style.display = 'none');
+    document.querySelector('.metro-line-group[data-line="all"]').style.display = 'block';
+    }
+    else {
         document.querySelector(`.metro-line-group[data-line="${line}"]`).style.display = 'block';
     }
 }
