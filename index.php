@@ -123,7 +123,7 @@ $stmt = $pdo->prepare($listSql);
 $stmt->execute($params);
 $posts = $stmt->fetchAll();
 $favoritePostIds = [];
-if (!empty($user) && (($user['role'] ?? '') === 'student') && !empty($posts)) {
+if (!empty($user) && !empty($posts)) { {
     $postIds = array_values(array_unique(array_map(static fn(array $item): int => (int) $item['id'], $posts)));
     $placeholders = implode(',', array_fill(0, count($postIds), '?'));
 
